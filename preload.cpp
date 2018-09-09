@@ -28,6 +28,7 @@
 #include <functional>
 #include <iostream>
 #include <sstream>
+#include <sys/mman.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,6 +41,7 @@
 #include <sys/vfs.h>
 #include <vector>
 #include <unistd.h>
+#include <spawn.h>
 
 #ifndef SNAPCRAFT_LIBNAME_DEF
 #define SNAPCRAFT_LIBNAME_DEF "libsnapcraft-preload.so"
@@ -330,6 +332,7 @@ extern "C"
 {
 #define ARG(A) , A
 #define REDIRECT_NAME(NAME) _ ## NAME ## _preload
+
 #define DECLARE_REDIRECT(NAME) \
 constexpr const char REDIRECT_NAME(NAME)[] = #NAME;
 
@@ -337,111 +340,28 @@ constexpr const char REDIRECT_NAME(NAME)[] = #NAME;
 DECLARE_REDIRECT(NAME) \
 RET NAME (const char *path SIG) { return redirect_n<RET, REDIRECT_NAME(NAME), REDIR_TYPE, 0>(path ARGS); }
 
-#define REDIRECT_2(RET, NAME, REDIR_TYPE, T1, SIG, ARGS) \
+#define REDIRECT_1_NL(RET, NAME, REDIR_TYPE, SIG, ARGS) \
 DECLARE_REDIRECT(NAME) \
-RET NAME (T1 a1, const char *path SIG) { return redirect_n<RET, REDIRECT_NAME(NAME), REDIR_TYPE, 1>(a1, path ARGS); }
+RET NAME (const char *path SIG) __THROWNL { return redirect_n<RET, REDIRECT_NAME(NAME), REDIR_TYPE, 0>(path ARGS); }
 
-#define REDIRECT_3(RET, NAME, REDIR_TYPE, T1, T2, SIG, ARGS) \
-DECLARE_REDIRECT(NAME) \
-RET NAME (T1 a1, T2 a2, const char *path SIG) { return redirect_n<RET, REDIRECT_NAME(NAME), REDIR_TYPE, 2>(a1, a2, path ARGS); }
-
-#define REDIRECT_1_1(RET, NAME) \
-REDIRECT_1(RET, NAME, NORMAL_REDIRECT, ,)
-
-#define REDIRECT_1_2(RET, NAME, T2) \
-REDIRECT_1(RET, NAME, NORMAL_REDIRECT, ARG(T2 a2), ARG(a2))
-
-#define REDIRECT_1_2_AT(RET, NAME, T2) \
-REDIRECT_1(RET, NAME, ABSOLUTE_REDIRECT, ARG(T2 a2), ARG(a2))
-
-#define REDIRECT_1_3(RET, NAME, T2, T3) \
-REDIRECT_1(RET, NAME, NORMAL_REDIRECT, ARG(T2 a2) ARG(T3 a3), ARG(a2) ARG(a3))
-
-#define REDIRECT_1_4(RET, NAME, T2, T3, T4) \
-REDIRECT_1(RET, NAME, NORMAL_REDIRECT, ARG(T2 a2) ARG(T3 a3) ARG(T4 a4), ARG(a2) ARG(a3) ARG(a4))
-
-#define REDIRECT_2_2(RET, NAME, T1) \
-REDIRECT_2(RET, NAME, NORMAL_REDIRECT, T1, ,)
-
-#define REDIRECT_2_3(RET, NAME, T1, T3) \
-REDIRECT_2(RET, NAME, NORMAL_REDIRECT, T1, ARG(T3 a3), ARG(a3))
-
-#define REDIRECT_2_3_AT(RET, NAME, T1, T3) \
-REDIRECT_2(RET, NAME, ABSOLUTE_REDIRECT, T1, ARG(T3 a3), ARG(a3))
-
-#define REDIRECT_2_4_AT(RET, NAME, T1, T3, T4) \
-REDIRECT_2(RET, NAME, ABSOLUTE_REDIRECT, T1, ARG(T3 a3) ARG(T4 a4), ARG(a3) ARG(a4))
-
-#define REDIRECT_2_5_AT(RET, NAME, T1, T3, T4, T5) \
-REDIRECT_2(RET, NAME, ABSOLUTE_REDIRECT, T1, ARG(T3 a3) ARG(T4 a4) ARG(T5 a5), ARG(a3) ARG(a4) ARG(a5))
-
-#define REDIRECT_3_5(RET, NAME, T1, T2, T4, T5) \
-REDIRECT_3(RET, NAME, NORMAL_REDIRECT, T1, T2, ARG(T4 a4) ARG(T5 a5), ARG(a4) ARG(a5))
-
-#define REDIRECT_TARGET(RET, NAME) \
-DECLARE_REDIRECT(NAME) \
-RET NAME (const char *path, const char *target) { return redirect_target<RET, REDIRECT_NAME(NAME), NORMAL_REDIRECT, TARGET_REDIRECT>(path, target); }
+#define REDIRECT_1_2_AT_NL(RET, NAME, T2) \
+REDIRECT_1_NL(RET, NAME, ABSOLUTE_REDIRECT, ARG(T2 a2), ARG(a2))
 
 #define REDIRECT_OPEN(NAME) \
 DECLARE_REDIRECT(NAME) \
 int NAME (const char *path, int flags, ...) { va_list va; va_start(va, flags); int ret = redirect_open<int, REDIRECT_NAME(NAME), NORMAL_REDIRECT, 0, const char *, int>(path, flags, va_separator(), va); va_end(va); return ret; }
-
 #define REDIRECT_OPEN_AT(NAME) \
 DECLARE_REDIRECT(NAME) \
 int NAME (int dirfp, const char *path, int flags, ...) { va_list va; va_start(va, flags); int ret = redirect_open<int, REDIRECT_NAME(NAME), ABSOLUTE_REDIRECT, 1, int, const char *, int>(dirfp, path, flags, va_separator(), va); va_end(va); return ret; }
-
-REDIRECT_1_2(FILE *, fopen, const char *)
-REDIRECT_1_1(int, unlink)
-REDIRECT_2_3_AT(int, unlinkat, int, int)
-REDIRECT_1_2(int, access, int)
-REDIRECT_1_2(int, eaccess, int)
-REDIRECT_1_2(int, euidaccess, int)
-REDIRECT_2_4_AT(int, faccessat, int, int, int)
-REDIRECT_1_2(int, stat, struct stat *)
-REDIRECT_1_2(int, stat64, struct stat64 *)
-REDIRECT_1_2(int, lstat, struct stat *)
-REDIRECT_1_2(int, lstat64, struct stat64 *)
-REDIRECT_1_2(int, creat, mode_t)
-REDIRECT_1_2(int, creat64, mode_t)
-REDIRECT_1_2(int, truncate, off_t)
-REDIRECT_2_2(char *, bindtextdomain, const char *)
-REDIRECT_2_3(int, xstat, int, struct stat *)
-REDIRECT_2_3(int, __xstat, int, struct stat *)
-REDIRECT_2_3(int, __xstat64, int, struct stat64 *)
-REDIRECT_2_3(int, __lxstat, int, struct stat *)
-REDIRECT_2_3(int, __lxstat64, int, struct stat64 *)
-REDIRECT_3_5(int, __fxstatat, int, int, struct stat *, int)
-REDIRECT_3_5(int, __fxstatat64, int, int, struct stat64 *, int)
-REDIRECT_1_2(int, statfs, struct statfs *)
-REDIRECT_1_2(int, statfs64, struct statfs64 *)
-REDIRECT_1_2(int, statvfs, struct statvfs *)
-REDIRECT_1_2(int, statvfs64, struct statvfs64 *)
-REDIRECT_1_2(long, pathconf, int)
-REDIRECT_1_1(DIR *, opendir)
-REDIRECT_1_2(int, mkdir, mode_t)
-REDIRECT_1_1(int, rmdir)
-REDIRECT_1_3(int, chown, uid_t, gid_t)
-REDIRECT_1_3(int, lchown, uid_t, gid_t)
-REDIRECT_1_2(int, chmod, mode_t)
-REDIRECT_1_2(int, lchmod, mode_t)
-REDIRECT_1_1(int, chdir)
-REDIRECT_1_3(ssize_t, readlink, char *, size_t)
-REDIRECT_1_2(char *, realpath, char *)
-REDIRECT_TARGET(int, link)
-REDIRECT_TARGET(int, rename)
 REDIRECT_OPEN(open)
 REDIRECT_OPEN(open64)
 REDIRECT_OPEN_AT(openat)
 REDIRECT_OPEN_AT(openat64)
-REDIRECT_2_3(int, inotify_add_watch, int, uint32_t)
-REDIRECT_1_4(int, scandir, struct dirent ***, filter_function_t<struct dirent>, compar_function_t<struct dirent>);
-REDIRECT_1_4(int, scandir64, struct dirent64 ***, filter_function_t<struct dirent64>, compar_function_t<struct dirent64>);
-REDIRECT_2_5_AT(int, scandirat, int, struct dirent ***, filter_function_t<struct dirent>, compar_function_t<struct dirent>);
-REDIRECT_2_5_AT(int, scandirat64, int, struct dirent64 ***, filter_function_t<struct dirent64>, compar_function_t<struct dirent64>);
 
 // non-absolute library paths aren't simply relative paths, they need
 // a whole lookup algorithm
-REDIRECT_1_2_AT(void *, dlopen, int);
+REDIRECT_1_2_AT_NL(void *, dlopen, int);
+
 }
 
 static int
@@ -472,24 +392,6 @@ socket_action (socket_action_t action, int sockfd, const struct sockaddr *addr, 
     }
 
     return result;
-}
-
-extern "C" int
-bind (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
-{
-    static socket_action_t _bind =
-        (decltype(_bind)) dlsym (RTLD_NEXT, "bind");
-
-    return socket_action (_bind, sockfd, addr, addrlen);
-}
-
-extern "C" int
-connect (int sockfd, const struct sockaddr *addr, socklen_t addrlen)
-{
-    static socket_action_t _connect =
-        (decltype(_connect)) dlsym (RTLD_NEXT, "connect");
-
-    return socket_action (_connect, sockfd, addr, addrlen);
 }
 
 namespace
@@ -624,13 +526,13 @@ execve_wrapper (const char *func, const char *path, char *const argv[], char *co
 } // anonymous namepsace
 
 extern "C" int
-execv (const char *path, char *const argv[])
+execv (const char *path, char *const argv[]) __THROW
 {
     return execve (path, argv, environ);
 }
 
 extern "C" int
-execve (const char *path, char *const argv[], char *const envp[])
+execve (const char *path, char *const argv[], char *const envp[]) __THROW
 {
     return execve_wrapper ("execve", path, argv, envp);
 }
@@ -639,4 +541,27 @@ extern "C" int
 __execve (const char *path, char *const argv[], char *const envp[])
 {
     return execve_wrapper ("__execve", path, argv, envp);
+}
+
+int posix_spawn_wrapper (pid_t *__restrict __pid,
+                         const char *__restrict __path,
+                         const posix_spawn_file_actions_t *__restrict __file_actions,
+                         const posix_spawnattr_t *__attrp,
+                         char *const __argv[__restrict_arr],
+                         char *const __envp[__restrict_arr])
+{
+    std::string const& new_path = redirect_path (__path);
+    int result = posix_spawn(__pid, new_path.c_str(), __file_actions, __attrp, __argv, __envp);
+    return result;
+}
+
+extern "C" int posix_spawn (pid_t *__restrict __pid,
+                        const char *__restrict __path,
+                        const posix_spawn_file_actions_t *__restrict
+                        __file_actions,
+                        const posix_spawnattr_t *__restrict __attrp,
+                        char *const __argv[__restrict_arr],
+                        char *const __envp[__restrict_arr])
+{
+    return posix_spawn_wrapper (__pid, __path, __file_actions, __attrp, __argv, __envp);
 }
